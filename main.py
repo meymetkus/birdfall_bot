@@ -99,7 +99,7 @@ def tum_sayfalari_tara():
                                 if eski_fiyat > guncel_fiyat:
                                     indirim_orani = ((eski_fiyat - guncel_fiyat) / eski_fiyat) * 100
                                     
-                                    if indirim_orani >= 10:
+                                    if indirim_orani >= 40:
                                         mesaj = (
                                             f"🚨 <b>AMAZON LİSTE İNDİRİMİ!</b>\n\n"
                                             f"📦 <b>Ürün:</b> {urun_adi[:100]}...\n"
