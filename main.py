@@ -7,6 +7,12 @@ import requests
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
 
+# --- PROXY BİLGİLERİNİZİ BURAYA YAZIN ---
+PROXY_IP = "82.41.113.137"       # Proxy IP adresiniz
+PROXY_PORT = "2534"            # Proxy portunuz
+PROXY_USER = "LJdsximctNx3" # Kullanıcı adı (varsa)
+PROXY_PASS = "3Eyb9BqYR4Kc"          # Şifre (varsa)
+
 SEARCH_URL = "https://www.amazon.com.tr/s?rh=n%3A13709879031%2Cp_n_fulfilled_by_amazon%3A21345978031&dc&qid=1788469863&rnid=21345970031&ref=sr_nr_p_n_fulfilled_by_amazon_0"
 
 def telegram_mesaj_gonder(mesaj):
@@ -18,23 +24,41 @@ def telegram_mesaj_gonder(mesaj):
         print(f"Telegram hatası: {e}")
 
 def liste_tarasını_yap():
+    proxy_config = {
+        "server": f"http://{PROXY_IP}:{PROXY_PORT}"
+    }
+    
+    # Kullanıcı adı ve şifre varsa ekle
+    if PROXY_USER and PROXY_PASS:
+        proxy_config["username"] = PROXY_USER
+        proxy_config["password"] = PROXY_PASS
+
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            locale="tr-TR",
-            viewport={"width": 1280, "height": 800},
-            accept_downloads=False
+        # Tarayıcıyı Proxy ile başlatıyoruz
+        browser = p.chromium.launch(
+            headless=True,
+            proxy=proxy_config,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-setuid-sandbox"
+            ]
         )
+        
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            locale="tr-TR",
+            viewport={"width": 1366, "height": 768}
+        )
+        
         page = context.new_page()
+        page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
         try:
-            print("Sayfaya gidiliyor...")
-            # wait_until="commit" kullanarak indirim/yönlendirme takılmasını aşıyoruz
-            response = page.goto(SEARCH_URL, wait_until="commit", timeout=60000)
+            print("Proxy üzerinden sayfaya gidiliyor...")
+            page.goto(SEARCH_URL, wait_until="networkidle", timeout=60000)
             
-            # DOM'un yüklenmesi için kısa bir bekleme
-            page.wait_for_selector("div[data-component-type='s-search-result']", timeout=15000)
+            time.sleep(3)
             
             html_content = page.content()
             soup = BeautifulSoup(html_content, "html.parser")
@@ -42,11 +66,11 @@ def liste_tarasını_yap():
             urun_kartlari = soup.find_all("div", {"data-component-type": "s-search-result"})
             
             if not urun_kartlari:
-                print("Ürün bulunamadı veya sayfa yapısı farklı.")
+                print("Ürün bulunamadı veya sayfa yüklenmedi.")
                 browser.close()
                 return
 
-            print(f"Başarılı! Toplam {len(urun_kartlari)} ürün bulundu.")
+            print(f"Mükemmel! Proxy ile toplam {len(urun_kartlari)} ürün başarıyla çekildi.")
 
             for kart in urun_kartlari:
                 baslik_elem = kart.find("h2")
