@@ -17,7 +17,7 @@ PROXY_PASS = "3Eyb9BqYR4Kc"          # Şifre
 # Taranacak Başlangıç Kategorisi Linki
 BASE_URL = "https://www.amazon.com.tr/s?rh=n%3A13709879031%2Cp_n_fulfilled_by_amazon%3A21345978031&dc&qid=1788469863&rnid=21345970031&ref=sr_nr_p_n_fulfilled_by_amazon_0"
 
-# Maksimum taranacak sayfa sayısı (GitHub Actions zaman aşımına takılmamak için varsayılan 10 sayfa)
+# Maksimum taranacak sayfa sayısı (GitHub Actions zaman aşımına takılmamak için varsayılan 400 sayfa)
 MAX_PAGES = 400 
 
 def telegram_mesaj_gonder(mesaj):
