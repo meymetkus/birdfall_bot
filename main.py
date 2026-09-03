@@ -19,21 +19,22 @@ def telegram_mesaj_gonder(mesaj):
 
 def liste_tarasını_yap():
     with sync_playwright() as p:
-        # Gerçek bir Chromium tarayıcısı başlat
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             locale="tr-TR",
-            viewport={"width": 1280, "height": 800}
+            viewport={"width": 1280, "height": 800},
+            accept_downloads=False
         )
         page = context.new_page()
 
         try:
             print("Sayfaya gidiliyor...")
-            page.goto(SEARCH_URL, wait_until="domcontentloaded", timeout=60000)
+            # wait_until="commit" kullanarak indirim/yönlendirme takılmasını aşıyoruz
+            response = page.goto(SEARCH_URL, wait_until="commit", timeout=60000)
             
-            # Sayfa ögelerinin tamamen yüklenmesi için 3 saniye bekle
-            time.sleep(3)
+            # DOM'un yüklenmesi için kısa bir bekleme
+            page.wait_for_selector("div[data-component-type='s-search-result']", timeout=15000)
             
             html_content = page.content()
             soup = BeautifulSoup(html_content, "html.parser")
