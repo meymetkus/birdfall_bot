@@ -5,10 +5,8 @@ from bs4 import BeautifulSoup
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
 
-# Takip edilecek ürün linki ve hedef indirimler
-URUN_URL = "https://www.amazon.com.tr/dp/B08N5WRWNW"  # Buraya takip etmek istediğiniz ürün linkini yapıştırabilirsiniz
-ESKI_FIYAT = 1000.0  # Referans başlangıç fiyatı (TL)
-HEDEF_INDIRIM_YUZDESI = 10  # Minimum yüzde kaç indirimde bildirim gelsin?
+# Sizin verdiğiniz kargo/kategori arama linki
+SEARCH_URL = "https://www.amazon.com.tr/s?rh=n%3A13709879031%2Cp_n_fulfilled_by_amazon%3A21345978031&dc&qid=1788469863&rnid=21345970031&ref=sr_nr_p_n_fulfilled_by_amazon_0"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -23,45 +21,65 @@ def telegram_mesaj_gonder(mesaj):
     except Exception as e:
         print(f"Telegram hatası: {e}")
 
-def kontrol_et():
+def liste_tarasını_yap():
     try:
-        res = requests.get(URUN_URL, headers=HEADERS)
+        res = requests.get(SEARCH_URL, headers=HEADERS)
         if res.status_code != 200:
             print(f"Sayfaya erişilemedi, Durum Kodu: {res.status_code}")
             return
 
         soup = BeautifulSoup(res.content, "html.parser")
         
-        baslik_elem = soup.find("span", {"id": "productTitle"})
-        urun_adi = baslik_elem.get_text().strip() if baslik_elem else "Ürün"
+        # Arama sonuçlarındaki ürün kartlarını bul
+        urun_kartlari = soup.find_all("div", {"data-component-type": "s-search-result"})
+        print(f"Toplam {len(urun_kartlari)} ürün bulundu.")
 
-        fiyat_elem = soup.find("span", {"class": "a-offscreen"})
-        if not fiyat_elem:
-            print("Fiyat bulunamadı.")
-            return
+        for kart in urun_kartlari:
+            # Ürün Başlığı ve Linki
+            baslik_elem = kart.find("h2")
+            if not baslik_elem:
+                continue
+            
+            urun_adi = baslik_elem.get_text().strip()
+            link_elem = baslik_elem.find("a")
+            urun_linki = "https://www.amazon.com.tr" + link_elem["href"] if link_elem and "href" in link_elem.attrs else SEARCH_URL
 
-        fiyat_text = fiyat_elem.get_text().replace("TL", "").replace(".", "").replace(",", ".").strip()
-        guncel_fiyat = float(fiyat_text)
+            # Güncel Fiyat
+            fiyat_elem = kart.find("span", {"class": "a-price-whole"})
+            if not fiyat_elem:
+                continue
+            
+            fiyat_text = fiyat_elem.get_text().replace(".", "").replace(",", ".").strip()
+            
+            # Ürünün üstü çizili eski fiyatı veya indirimi var mı kontrol et
+            eski_fiyat_elem = kart.find("span", {"class": "a-text-price"})
+            if eski_fiyat_elem:
+                eski_fiyat_text = eski_fiyat_elem.find("span", {"class": "a-offscreen"})
+                if eski_fiyat_text:
+                    eski_str = eski_fiyat_text.get_text().replace("TL", "").replace(".", "").replace(",", ".").strip()
+                    try:
+                        guncel_fiyat = float(fiyat_text)
+                        eski_fiyat = float(eski_str)
 
-        if ESKI_FIYAT > guncel_fiyat:
-            indirim = ((ESKI_FIYAT - guncel_fiyat) / ESKI_FIYAT) * 100
-            if indirim >= HEDEF_INDIRIM_YUZDESI:
-                mesaj = (
-                    f"🚨 <b>AMAZON İNDİRİMİ!</b>\n\n"
-                    f"📦 <b>Ürün:</b> {urun_adi}\n"
-                    f"📉 <b>İndirim:</b> %{indirim:.1f}\n"
-                    f"💰 <b>Fiyat:</b> {ESKI_FIYAT} TL ➔ {guncel_fiyat} TL\n\n"
-                    f"🔗 <a href='{URUN_URL}'>Ürüne Git</a>"
-                )
-                telegram_mesaj_gonder(mesaj)
-                print("İndirim bildirimi gönderildi!")
-            else:
-                print(f"İndirim yetersiz (%{indirim:.1f}). Güncel Fiyat: {guncel_fiyat} TL")
-        else:
-            print(f"İndirim yok. Güncel Fiyat: {guncel_fiyat} TL")
+                        if eski_fiyat > guncel_fiyat:
+                            indirim_orani = ((eski_fiyat - guncel_fiyat) / eski_fiyat) * 100
+                            
+                            # Yüzde 10 ve üzeri indirim varsa bildirim gönder
+                            if indirim_orani >= 10:
+                                mesaj = (
+                                    f"🚨 <b>AMAZON LİSTE İNDİRİMİ!</b>\n\n"
+                                    f"📦 <b>Ürün:</b> {urun_adi[:100]}...\n"
+                                    f"📉 <b>İndirim:</b> %{indirim_orani:.1f}\n"
+                                    f"💰 <b>Fiyat:</b> {eski_fiyat:.2f} TL ➔ {guncel_fiyat:.2f} TL\n\n"
+                                    f"🔗 <a href='{urun_linki}'>Ürüne Git</a>"
+                                )
+                                telegram_mesaj_gonder(mesaj)
+                                print(f"İndirim bulundu: {urun_adi[:30]}")
+                    except ValueError:
+                        continue
 
     except Exception as e:
         print("Hata oluştu:", e)
 
 if __name__ == "__main__":
-    kontrol_et()
+    liste_tarasını_yap()
