@@ -1,4 +1,6 @@
 import os
+import time
+import random
 from bs4 import BeautifulSoup
 from curl_cffi import requests
 
@@ -6,6 +8,26 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
 
 SEARCH_URL = "https://www.amazon.com.tr/s?rh=n%3A13709879031%2Cp_n_fulfilled_by_amazon%3A21345978031&dc&qid=1788469863&rnid=21345970031&ref=sr_nr_p_n_fulfilled_by_amazon_0"
+
+# Amazon'un bot olarak algılamaması için tam tarayıcı başlıkları
+HEADERS = {
+    "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "accept-language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+    "cache-control": "max-age=0",
+    "device-memory": "8",
+    "downlink": "10",
+    "ect": "4g",
+    "rtt": "50",
+    "sec-ch-ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
+    "sec-fetch-dest": "document",
+    "sec-fetch-mode": "navigate",
+    "sec-fetch-site": "none",
+    "sec-fetch-user": "?1",
+    "upgrade-insecure-requests": "1",
+    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
 
 def telegram_mesaj_gonder(mesaj):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -17,11 +39,15 @@ def telegram_mesaj_gonder(mesaj):
 
 def liste_tarasını_yap():
     try:
-        # Chrome 120 tarayıcısı taklidi yaparak Amazon engelini aşar
-        res = requests.get(
+        # İstek atmadan önce insan taklidi için 2-5 saniye arası rastgele bekle
+        time.sleep(random.uniform(2, 5))
+
+        session = requests.Session()
+        res = session.get(
             SEARCH_URL,
+            headers=HEADERS,
             impersonate="chrome120",
-            headers={"Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"}
+            timeout=15
         )
 
         if res.status_code != 200:
@@ -30,6 +56,11 @@ def liste_tarasını_yap():
 
         soup = BeautifulSoup(res.content, "html.parser")
         urun_kartlari = soup.find_all("div", {"data-component-type": "s-search-result"})
+        
+        if not urun_kartlari:
+            print("Ürün kartı bulunamadı veya korumaya takıldı.")
+            return
+
         print(f"Toplam {len(urun_kartlari)} ürün bulundu.")
 
         for kart in urun_kartlari:
