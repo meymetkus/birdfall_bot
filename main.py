@@ -2,6 +2,7 @@ import os
 import time
 import random
 import re
+from urllib.parse import unquote
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 import requests
@@ -15,7 +16,6 @@ PROXY_PORT = "2534"            # Proxy portunuz
 PROXY_USER = "LJdsximctNx3" # Kullanıcı adı
 PROXY_PASS = "3Eyb9BqYR4Kc"          # Şifre
 
-# Taranacak Başlangıç Kategorisi Linki
 BASE_URL = "https://www.amazon.com.tr/s?rh=n%3A13709879031%2Cp_n_fulfilled_by_amazon%3A21345978031&dc&qid=1788469863&rnid=21345970031&ref=sr_nr_p_n_fulfilled_by_amazon_0"
 
 MAX_PAGES = 400
@@ -29,20 +29,37 @@ def telegram_mesaj_gonder(mesaj):
     except Exception as e:
         print(f"Telegram hatası: {e}")
 
-def urun_linki_temizle(href_str):
-    if not href_str:
+def asin_ile_temiz_link_al(kart):
+    """
+    Ürün kartının içerisinden ASIN (B0...) kodunu ayıklar.
+    Eğer ürün koduna ulaşılamazsa None döner (kategori linklerine düşmeyi kesin engeller).
+    """
+    # 1. Öncelik: h2 içindeki a etiketi
+    h2_link = kart.select_one("h2 a")
+    raw_href = h2_link.get("href") if h2_link else None
+
+    # 2. Öncelik: Kart içindeki herhangi bir a etiketi
+    if not raw_href:
+        for a_tag in kart.find_all("a", href=True):
+            href = a_tag["href"]
+            if "/dp/" in href or "/gp/product/" in href or "sspa/click" in href:
+                raw_href = href
+                break
+
+    if not raw_href:
         return None
-    # ASIN (Amazon ürün kodu B0... ile başlar) kodunu yakala
-    asin_match = re.search(r'/(?:dp|gp/product)/([A-Z0-9]{10})', href_str)
+
+    # Sponsorlu/Yönlendirmeli (sspa/click) URL çözümü
+    if "sspa/click" in raw_href or "url=" in raw_href:
+        url_match = re.search(r'url=([^&]+)', raw_href)
+        if url_match:
+            raw_href = unquote(url_match.group(1))
+
+    # ASIN Regex yakalama (B0 ile başlayan 10 karakterli Amazon ürün kodu)
+    asin_match = re.search(r'/(?:dp|gp/product)/([A-Z0-9]{10})', raw_href)
     if asin_match:
         return f"https://www.amazon.com.tr/dp/{asin_match.group(1)}"
-    
-    # ASIN bulunamazsa tam URL yap
-    if href_str.startswith("http"):
-        return href_str.split("?")[0]
-    elif href_str.startswith("/"):
-        return "https://www.amazon.com.tr" + href_str.split("?")[0]
-    
+
     return None
 
 def tum_sayfalari_tara():
@@ -77,7 +94,7 @@ def tum_sayfalari_tara():
             while current_url and page_number <= MAX_PAGES:
                 print(f"--- Sayfa {page_number}/{MAX_PAGES} Taranıyor ---")
                 
-                response = page.goto(current_url, wait_until="domcontentloaded", timeout=60000)
+                page.goto(current_url, wait_until="domcontentloaded", timeout=60000)
                 time.sleep(random.uniform(1.0, 2.0))
                 
                 html_content = page.content()
@@ -92,18 +109,10 @@ def tum_sayfalari_tara():
                 toplam_tespit_edilen_urun += len(urun_kartlari)
 
                 for kart in urun_kartlari:
-                    # Doğrudan başlık içindeki <a> etiketini veya ana ürün bağlantısını arıyoruz
-                    link_elem = kart.find("a", {"class": "a-link-normal s-no-outline"}) or \
-                                kart.find("a", {"class": "a-link-normal s-line-clamp-2"}) or \
-                                kart.select_one("h2 a")
+                    # Temiz Ürün Linkini ASIN Filtresiyle Al
+                    urun_linki = asin_ile_temiz_link_al(kart)
                     
-                    if not link_elem or "href" not in link_elem.attrs:
-                        continue
-                        
-                    raw_href = link_elem["href"]
-                    urun_linki = urun_linki_temizle(raw_href)
-                    
-                    # Eğer geçerli ürün linki çıkarılamadıysa pas geç
+                    # Eğer ASIN bulunamadıysa hatalı yönlendirme yapmamak için atla
                     if not urun_linki:
                         continue
 
@@ -128,6 +137,7 @@ def tum_sayfalari_tara():
                                 if eski_fiyat > guncel_fiyat:
                                     indirim_orani = ((eski_fiyat - guncel_fiyat) / eski_fiyat) * 100
                                     
+                                    # %30 ve Üzeri İndirim Filtresi
                                     if indirim_orani >= MIN_DISCOUNT_PERCENT:
                                         bulunan_indirim_sayisi += 1
                                         mesaj = (
