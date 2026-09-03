@@ -2,7 +2,7 @@ name: Amazon Price Tracker
 
 on:
   schedule:
-    - cron: '*/5 * * * *'  # Her 30 dakikada bir otomatik çalışır
+    - cron: '*/5 * * * *'  # Her 5 dakikada bir otomatik çalışır
   workflow_dispatch:      # Elle çalıştırma butonu ekler
 
 jobs:
