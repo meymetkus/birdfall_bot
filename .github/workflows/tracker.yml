@@ -32,7 +32,7 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add bildirilenler.txt
+          git add firsat_hafizasi.db
           git commit -m "Bildirilen ürünler güncellendi" || exit 0
           git push
 
