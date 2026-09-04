@@ -18,13 +18,12 @@ PROXY_USER = "LJdsximctNx3"
 PROXY_PASS = "3Eyb9BqYR4Kc"
 
 DEALS_URLS = [
-    "https://www.amazon.com.tr/deals?ref_=nav_cs_gb",
+    "https://www.amazon.com.tr/deals",
     "https://www.amazon.com.tr/gp/goldbox",
     "https://www.amazon.com.tr/s?i=electronics&rh=p_n_deal_type%3A26901101031"
 ]
 
-# TEST İÇİN %5 YAPILDI (Daha sonra %25 veya %30 yapabilirsiniz)
-MIN_DISCOUNT_PERCENT = 5.0  
+MIN_DISCOUNT_PERCENT = 5.0  # Test için %5
 DB_FILE = "firsat_hafizasi.db"
 
 def db_kur():
@@ -100,25 +99,27 @@ def anlik_firsat_taramasi():
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             locale="tr-TR",
-            viewport={"width": 1440, "height": 900}
+            viewport={"width": 1440, "height": 900},
+            accept_downloads=True  # Download hatasını önler
         )
-        
-        page = context.new_page()
-        page.route("**/*.{png,jpg,jpeg,svg,webp,gif,woff,woff2,ttf}", lambda route: route.abort())
 
         print("🚀 Anlık Fırsat Tarayıcısı Başlatıldı...")
 
         for target_url in DEALS_URLS:
             print(f"\n[SAYFA TARANIYOR] -> {target_url}")
+            page = context.new_page()
+            page.route("**/*.{png,jpg,jpeg,svg,webp,gif,woff,woff2,ttf}", lambda route: route.abort())
+
             try:
-                page.goto(target_url, wait_until="commit", timeout=25000)
-                page.wait_for_timeout(3000)
+                # domcontentloaded kullanarak yönlendirmelerin tamamlanmasına izin veriyoruz
+                page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
+                page.wait_for_timeout(4000)
 
                 soup = BeautifulSoup(page.content(), "html.parser")
                 kartlar = soup.select("div[data-component-type='s-search-result'], div[data-testid='grid-deals-container'] div[data-deal-id]")
                 
                 if not kartlar:
-                    kartlar = soup.find_all("div", {"class": re.compile(r'DealCard|GridItem')})
+                    kartlar = soup.find_all("div", {"class": re.compile(r'DealCard|GridItem|DealTile')})
 
                 print(f"Tespit Edilen Potansiyel Fırsat Kartı Sayısı: {len(kartlar)}")
 
@@ -131,13 +132,10 @@ def anlik_firsat_taramasi():
                             if match:
                                 asin = match.group(1)
 
-                    if not asin:
+                    if not asin or daha_once_bildirildi_mi(asin):
                         continue
 
-                    if daha_once_bildirildi_mi(asin):
-                        continue
-
-                    baslik_elem = kart.find("h2") or kart.select_one("span.a-truncate-full, .a-size-base-plus")
+                    baslik_elem = kart.find("h2") or kart.select_one("span.a-truncate-full, .a-size-base-plus, [class*='title']")
                     urun_adi = baslik_elem.get_text().strip() if baslik_elem else "Amazon Fırsat Ürünü"
 
                     guncel_fiyat = None
@@ -164,7 +162,6 @@ def anlik_firsat_taramasi():
                     elif rozet_orani:
                         indirim_orani = rozet_orani
 
-                    # --- DETAYLI YAZDIRMA (KARTLARI GÖRMEK İÇİN) ---
                     print(f"-> ASIN: {asin} | Güncel: {guncel_fiyat} TL | Eski: {eski_fiyat} TL | İndirim: %{indirim_orani:.1f}")
 
                     if indirim_orani >= MIN_DISCOUNT_PERCENT and guncel_fiyat:
@@ -185,6 +182,8 @@ def anlik_firsat_taramasi():
 
             except Exception as e:
                 print(f"Hata oluştu ({target_url}): {e}")
+            finally:
+                page.close()
 
         browser.close()
 
