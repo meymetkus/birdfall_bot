@@ -28,14 +28,15 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
         run: python main.py
-- name: Hafızayı Kaydet
+      - name: Hafızayı Kaydet
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add bildirilenler.txt
           git commit -m "Bildirilen ürünler güncellendi" || exit 0
           git push
-- name: Eski Calisma Gecmisini Temizle
+
+      - name: Eski Calisma Gecmisini Temizle
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
