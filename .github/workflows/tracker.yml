@@ -35,3 +35,10 @@ jobs:
           git add bildirilenler.txt
           git commit -m "Bildirilen ürünler güncellendi" || exit 0
           git push
+- name: Eski Calisma Gecmisini Temizle
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          retain_days: 1
+          keep_minimum_runs: 3
