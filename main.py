@@ -12,12 +12,12 @@ CHAT_ID = os.environ.get("CHAT_ID")
 
 # PROXY BİLGİLERİNİZ
 PROXY_IP = "82.41.113.137"       # Proxy IP adresiniz
-PROXY_PORT = "2534"            # Proxy portunuz
-PROXY_USER = "LJdsximctNx3" # Kullanıcı adı
-PROXY_PASS = "LJdsximctNx3"          # Şifre
+PROXY_PORT = "2534"             # Proxy portunuz
+PROXY_USER = "LJdsximctNx3"     # Kullanıcı adı
+PROXY_PASS = "LJdsximctNx3"     # Şifre
 
-# TARANACAK KATEGORİ LİNKLERİ (İstediğiniz kadar link ekleyebilirsiniz)
-   KATEGORI_LINKLERI = [
+# TARANACAK KATEGORİ LİNKLERİ
+KATEGORI_LINKLERI = [
     # 1. Bilgisayar & Bileşenleri (Prime Gönderimli)
     "https://www.amazon.com.tr/s?rh=n%3A13709879031%2Cp_n_fulfilled_by_amazon%3A21345978031",
     
@@ -119,6 +119,8 @@ def tum_sayfalari_tara():
                         page.wait_for_selector("div[data-component-type='s-search-result']", timeout=15000)
                     except Exception as goto_err:
                         print(f"Sayfa yüklenme uyarısı: {goto_err}")
+
+                    time.sleep(random.uniform(1.0, 2.0))
                     
                     html_content = page.content()
                     soup = BeautifulSoup(html_content, "html.parser")
@@ -135,7 +137,6 @@ def tum_sayfalari_tara():
                         if not urun_linki or not asin:
                             continue
 
-                        # Düzeltme 1: Daha önce bildirilmişse atla
                         if daha_once_bildirildi_mi(asin):
                             continue
 
@@ -170,7 +171,7 @@ def tum_sayfalari_tara():
                                                 f"🔗 <a href='{urun_linki}'>Ürüne Git</a>"
                                             )
                                             telegram_mesaj_gonder(mesaj)
-                                            hafizaya_ekle(asin) # ASIN kodunu hafıza dosyasına ekle
+                                            hafizaya_ekle(asin)
                                             print(f"[YENİ] %{indirim_orani:.1f} İndirim: {urun_adi[:30]}")
                                 except ValueError:
                                     continue
