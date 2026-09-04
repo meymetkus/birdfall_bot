@@ -17,17 +17,16 @@ PROXY_PORT = "2534"
 PROXY_USER = "LJdsximctNx3"
 PROXY_PASS = "3Eyb9BqYR4Kc"
 
-# HEDEF FIRSAT SAYFALARI (Kategori yerine doğrudan indirim/fırsat sayfaları)
 DEALS_URLS = [
     "https://www.amazon.com.tr/deals?ref_=nav_cs_gb",
     "https://www.amazon.com.tr/gp/goldbox",
-    "https://www.amazon.com.tr/s?i=electronics&rh=p_n_deal_type%3A26901101031" # Sadece Fırsatlı Elektronik
+    "https://www.amazon.com.tr/s?i=electronics&rh=p_n_deal_type%3A26901101031"
 ]
 
-MIN_DISCOUNT_PERCENT = 25.0  # %25 ve üzeri indirimler
+# TEST İÇİN %5 YAPILDI (Daha sonra %25 veya %30 yapabilirsiniz)
+MIN_DISCOUNT_PERCENT = 5.0  
 DB_FILE = "firsat_hafizasi.db"
 
-# --- VERİTABANI YÖNETİMİ (SQLite) ---
 def db_kur():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -105,7 +104,6 @@ def anlik_firsat_taramasi():
         )
         
         page = context.new_page()
-        # Görselleri ve fontları engelleyerek maksimum hıza ulaşıyoruz
         page.route("**/*.{png,jpg,jpeg,svg,webp,gif,woff,woff2,ttf}", lambda route: route.abort())
 
         print("🚀 Anlık Fırsat Tarayıcısı Başlatıldı...")
@@ -114,22 +112,17 @@ def anlik_firsat_taramasi():
             print(f"\n[SAYFA TARANIYOR] -> {target_url}")
             try:
                 page.goto(target_url, wait_until="commit", timeout=25000)
-                page.wait_for_timeout(3000) # Sayfanın render olması için kısa bekleme
+                page.wait_for_timeout(3000)
 
-                # Fırsat Kartlarını Yakala
                 soup = BeautifulSoup(page.content(), "html.parser")
-                
-                # Hem standart arama sonuçlarını hem de Deals bileşenlerini tara
                 kartlar = soup.select("div[data-component-type='s-search-result'], div[data-testid='grid-deals-container'] div[data-deal-id]")
                 
                 if not kartlar:
-                    # Alternatif genel kart yakalayıcı
                     kartlar = soup.find_all("div", {"class": re.compile(r'DealCard|GridItem')})
 
                 print(f"Tespit Edilen Potansiyel Fırsat Kartı Sayısı: {len(kartlar)}")
 
                 for kart in kartlar:
-                    # ASIN Tespiti
                     asin = kart.get("data-asin")
                     if not asin:
                         link_elem = kart.find("a", href=True)
@@ -138,28 +131,26 @@ def anlik_firsat_taramasi():
                             if match:
                                 asin = match.group(1)
 
-                    if not asin or daha_once_bildirildi_mi(asin):
+                    if not asin:
                         continue
 
-                    # Ürün Adı
+                    if daha_once_bildirildi_mi(asin):
+                        continue
+
                     baslik_elem = kart.find("h2") or kart.select_one("span.a-truncate-full, .a-size-base-plus")
                     urun_adi = baslik_elem.get_text().strip() if baslik_elem else "Amazon Fırsat Ürünü"
 
-                    # Fiyat Bilgileri
                     guncel_fiyat = None
                     eski_fiyat = None
 
-                    # Güncel Fiyat
                     guncel_elem = kart.select_one("span.a-price:not([data-a-strike='true']) span.a-offscreen, .a-price-whole")
                     if guncel_elem:
                         guncel_fiyat = metinden_fiyat_cikar(guncel_elem.get_text())
 
-                    # Üstü Çizili Eski Fiyat
                     eski_elem = kart.select_one("span.a-price[data-a-strike='true'] span.a-offscreen, span.a-text-price span.a-offscreen")
                     if eski_elem:
                         eski_fiyat = metinden_fiyat_cikar(eski_elem.get_text())
 
-                    # İndirim Rozeti / Oranı (%XX İndirim yazısı varsa doğrudan al)
                     rozet_elem = kart.select_one("span.a-badge-text, div[class*='badge']")
                     rozet_orani = None
                     if rozet_elem:
@@ -167,17 +158,17 @@ def anlik_firsat_taramasi():
                         if rozet_match:
                             rozet_orani = float(rozet_match.group(1))
 
-                    # İndirim Hesaplama Mantığı
                     indirim_orani = 0.0
                     if eski_fiyat and guncel_fiyat and eski_fiyat > guncel_fiyat:
                         indirim_orani = ((eski_fiyat - guncel_fiyat) / eski_fiyat) * 100
                     elif rozet_orani:
                         indirim_orani = rozet_orani
 
-                    # Eşik Kontrolü ve Bildirim
+                    # --- DETAYLI YAZDIRMA (KARTLARI GÖRMEK İÇİN) ---
+                    print(f"-> ASIN: {asin} | Güncel: {guncel_fiyat} TL | Eski: {eski_fiyat} TL | İndirim: %{indirim_orani:.1f}")
+
                     if indirim_orani >= MIN_DISCOUNT_PERCENT and guncel_fiyat:
                         urun_linki = f"https://www.amazon.com.tr/dp/{asin}"
-                        
                         eski_fiyat_str = f"{eski_fiyat:.2f} TL" if eski_fiyat else "Belirtilmemiş"
                         
                         mesaj = (
