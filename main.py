@@ -23,7 +23,7 @@ DEALS_URLS = [
     "https://www.amazon.com.tr/s?i=electronics&rh=p_n_deal_type%3A26901101031"
 ]
 
-MIN_DISCOUNT_PERCENT = 5.0  # Test için %5
+MIN_DISCOUNT_PERCENT = 30.0  # Test için %30
 DB_FILE = "firsat_hafizasi.db"
 
 def db_kur():
