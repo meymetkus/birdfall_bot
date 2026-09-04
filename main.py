@@ -18,9 +18,15 @@ PROXY_USER = "LJdsximctNx3"
 PROXY_PASS = "3Eyb9BqYR4Kc"
 
 DEALS_URLS = [
+    # Genel Fırsatlar ve Günün Fırsatları
     "https://www.amazon.com.tr/deals",
     "https://www.amazon.com.tr/gp/goldbox",
-    "https://www.amazon.com.tr/s?i=electronics&rh=p_n_deal_type%3A26901101031"
+    # Elektronik Kategorisindeki Tüm İndirimli Ürünler
+    "https://www.amazon.com.tr/s?i=electronics&rh=p_n_deal_type%3A26901101031",
+    # Bilgisayar Kategorisindeki İndirimli Ürünler
+    "https://www.amazon.com.tr/s?i=computers&rh=p_n_deal_type%3A26901101031",
+    # Ev & Mutfak İndirimleri
+    "https://www.amazon.com.tr/s?i=kitchen&rh=p_n_deal_type%3A26901101031"
 ]
 
 MIN_DISCOUNT_PERCENT = 30.0  # Test için %30
