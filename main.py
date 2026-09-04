@@ -114,8 +114,11 @@ def tum_sayfalari_tara():
                 while current_url and page_number <= MAX_PAGES_PER_CATEGORY:
                     print(f"[Kat {kat_idx}] Sayfa {page_number}/{MAX_PAGES_PER_CATEGORY} Taranıyor...")
                     
-                    page.goto(current_url, wait_until="domcontentloaded", timeout=60000)
-                    time.sleep(random.uniform(1.0, 2.0))
+                    try:
+                        page.goto(current_url, wait_until="commit", timeout=30000)
+                        page.wait_for_selector("div[data-component-type='s-search-result']", timeout=15000)
+                    except Exception as goto_err:
+                        print(f"Sayfa yüklenme uyarısı: {goto_err}")
                     
                     html_content = page.content()
                     soup = BeautifulSoup(html_content, "html.parser")
