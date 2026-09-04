@@ -17,15 +17,15 @@ PROXY_USER = "LJdsximctNx3" # Kullanıcı adı
 PROXY_PASS = "LJdsximctNx3"          # Şifre
 
 # TARANACAK KATEGORİ LİNKLERİ (İstediğiniz kadar link ekleyebilirsiniz)
-KATEGORI_LINKLERI = [
-    # 1. Kategori: Bilgisayar Bileşenleri ve Aksesuarları
-    "https://www.amazon.com.tr/s?rh=n%3A13709879031%2Cp_n_fulfilled_by_amazon%3A21345978031&dc&qid=1788469863&rnid=21345970031&ref=sr_nr_p_n_fulfilled_by_amazon_0",
+   KATEGORI_LINKLERI = [
+    # 1. Bilgisayar & Bileşenleri (Prime Gönderimli)
+    "https://www.amazon.com.tr/s?rh=n%3A13709879031%2Cp_n_fulfilled_by_amazon%3A21345978031",
     
-    # 2. Kategori: (Örnek) Cep Telefonu ve Aksesuarları (Kendi linkinizi ekleyebilirsiniz)
-    # "https://www.amazon.com.tr/s?i=electronics&rh=n%3A13709880031...",
+    # 2. Elektronik Genel
+    "https://www.amazon.com.tr/s?i=electronics&rh=p_n_fulfilled_by_amazon%3A21345978031",
     
-    # 3. Kategori: (Örnek) Günün Fırsatları / Elektronik
-    # "https://www.amazon.com.tr/deals?discounts-widget=%2522percentOff%2522%253A%252230-%2522"
+    # 3. Cep Telefonu ve Aksesuarları
+    "https://www.amazon.com.tr/s?i=telephones&rh=p_n_fulfilled_by_amazon%3A21345978031"
 ]
 
 MAX_PAGES_PER_CATEGORY = 400  # Her kategori için taranacak maks sayfa
