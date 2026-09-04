@@ -2,6 +2,7 @@ import os
 import time
 import random
 import re
+import sqlite3
 from urllib.parse import unquote
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
@@ -14,94 +15,77 @@ CHAT_ID = os.environ.get("CHAT_ID")
 PROXY_IP = "82.41.113.137"
 PROXY_PORT = "2534"
 PROXY_USER = "LJdsximctNx3"
-PROXY_PASS = "LJdsximctNx3"
+PROXY_PASS = "3Eyb9BqYR4Kc"
 
-KATEGORI_LINKLERI = [
-    # 1. Bilgisayar & Bileşenleri (Prime Gönderimli)
-    "https://www.amazon.com.tr/s?rh=n%3A13709879031%2Cp_n_fulfilled_by_amazon%3A21345978031",
-    # 2. Elektronik Genel
-    "https://www.amazon.com.tr/s?i=electronics&rh=p_n_fulfilled_by_amazon%3A21345978031",
-    # 3. Cep Telefonu ve Aksesuarları
-    "https://www.amazon.com.tr/s?i=telephones&rh=p_n_fulfilled_by_amazon%3A21345978031"
+# HEDEF FIRSAT SAYFALARI (Kategori yerine doğrudan indirim/fırsat sayfaları)
+DEALS_URLS = [
+    "https://www.amazon.com.tr/deals?ref_=nav_cs_gb",
+    "https://www.amazon.com.tr/gp/goldbox",
+    "https://www.amazon.com.tr/s?i=electronics&rh=p_n_deal_type%3A26901101031" # Sadece Fırsatlı Elektronik
 ]
 
-MAX_PAGES_PER_CATEGORY = 400
-MIN_DISCOUNT_PERCENT = 30.0
-HAFIZA_DOSYASI = "bildirilenler.txt"
+MIN_DISCOUNT_PERCENT = 25.0  # %25 ve üzeri indirimler
+DB_FILE = "firsat_hafizasi.db"
+
+# --- VERİTABANI YÖNETİMİ (SQLite) ---
+def db_kur():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS urunler (
+            asin TEXT PRIMARY KEY,
+            fiyat REAL,
+            tarih TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+    conn.close()
 
 def daha_once_bildirildi_mi(asin):
-    if not os.path.exists(HAFIZA_DOSYASI):
-        return False
-    with open(HAFIZA_DOSYASI, "r", encoding="utf-8") as f:
-        kayitlar = f.read().splitlines()
-    return asin in kayitlar
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT asin FROM urunler WHERE asin = ?", (asin,))
+    row = cursor.fetchone()
+    conn.close()
+    return row is not None
 
-def hafizaya_ekle(asin):
-    with open(HAFIZA_DOSYASI, "a", encoding="utf-8") as f:
-        f.write(f"{asin}\n")
+def db_ekle(asin, fiyat):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO urunler (asin, fiyat) VALUES (?, ?)", (asin, fiyat))
+    conn.commit()
+    conn.close()
 
 def telegram_mesaj_gonder(mesaj):
     if not TELEGRAM_TOKEN or not CHAT_ID:
-        print("[UYARI] TELEGRAM_TOKEN veya CHAT_ID tanımlı değil!")
+        print("[UYARI] TELEGRAM_TOKEN veya CHAT_ID eksik!")
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": CHAT_ID, "text": mesaj, "parse_mode": "HTML"}
     try:
         requests.post(url, data=payload, proxies={"http": None, "https": None}, timeout=10)
     except Exception as e:
-        print(f"Telegram hatası: {e}")
+        print(f"Telegram Gönderim Hatası: {e}")
 
-def metinden_fiyat_ cikar(fiyat_str):
-    """
-    Amazon'un "1.299,00 TL" veya "1.299 TL" gibi fiyat metinlerini güvenli şekilde float'a çevirir.
-    """
+def metinden_fiyat_cikar(fiyat_str):
     if not fiyat_str:
         return None
-    # Sadece rakam, nokta ve virgülü tut
     temiz = re.sub(r'[^\d.,]', '', fiyat_str)
     if not temiz:
         return None
-    
-    # "1.299,50" -> binlik noktayı kaldır, virgülü noktaya çevir -> "1299.50"
     if "," in temiz:
         temiz = temiz.replace(".", "").replace(",", ".")
     else:
-        # Eğer sadece nokta varsa ve son 3 haneden önceyse binlik ayırıcıdır (örn: 1.299)
         if temiz.count(".") == 1 and len(temiz.split(".")[1]) != 2:
             temiz = temiz.replace(".", "")
-            
     try:
         return float(temiz)
     except ValueError:
         return None
 
-def asin_ile_temiz_link_ve_id_al(kart):
-    h2_link = kart.select_one("h2 a")
-    raw_href = h2_link.get("href") if h2_link else None
-
-    if not raw_href:
-        for a_tag in kart.find_all("a", href=True):
-            href = a_tag["href"]
-            if "/dp/" in href or "/gp/product/" in href or "sspa/click" in href:
-                raw_href = href
-                break
-
-    if not raw_href:
-        return None, None
-
-    if "sspa/click" in raw_href or "url=" in raw_href:
-        url_match = re.search(r'url=([^&]+)', raw_href)
-        if url_match:
-            raw_href = unquote(url_match.group(1))
-
-    asin_match = re.search(r'/(?:dp|gp/product)/([A-Z0-9]{10})', raw_href)
-    if asin_match:
-        asin = asin_match.group(1)
-        return f"https://www.amazon.com.tr/dp/{asin}", asin
-
-    return None, None
-
-def tum_sayfalari_tara():
+def anlik_firsat_taramasi():
+    db_kur()
+    
     proxy_config = {"server": f"http://{PROXY_IP}:{PROXY_PORT}"}
     if PROXY_USER and PROXY_PASS:
         proxy_config["username"] = PROXY_USER
@@ -111,131 +95,107 @@ def tum_sayfalari_tara():
         browser = p.chromium.launch(
             headless=True,
             proxy=proxy_config,
-            args=["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-setuid-sandbox"]
+            args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
         )
         
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             locale="tr-TR",
-            viewport={"width": 1366, "height": 768}
+            viewport={"width": 1440, "height": 900}
         )
         
         page = context.new_page()
+        # Görselleri ve fontları engelleyerek maksimum hıza ulaşıyoruz
         page.route("**/*.{png,jpg,jpeg,svg,webp,gif,woff,woff2,ttf}", lambda route: route.abort())
-        page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
-        toplam_yeni_bildirim = 0
+        print("🚀 Anlık Fırsat Tarayıcısı Başlatıldı...")
 
-        for kat_idx, base_url in enumerate(KATEGORI_LINKLERI, start=1):
-            print(f"\n==========================================")
-            print(f"Kategori {kat_idx}/{len(KATEGORI_LINKLERI)} Taranıyor...")
-            print(f"==========================================")
-            
-            current_url = base_url
-            page_number = 1
-
+        for target_url in DEALS_URLS:
+            print(f"\n[SAYFA TARANIYOR] -> {target_url}")
             try:
-                while current_url and page_number <= MAX_PAGES_PER_CATEGORY:
-                    print(f"[Kat {kat_idx}] Sayfa {page_number}/{MAX_PAGES_PER_CATEGORY} Taranıyor...")
-                    
-                    try:
-                        page.goto(current_url, wait_until="commit", timeout=30000)
-                        page.wait_for_selector("div[data-component-type='s-search-result']", timeout=15000)
-                    except Exception as goto_err:
-                        print(f"Sayfa yüklenme uyarısı: {goto_err}")
+                page.goto(target_url, wait_until="commit", timeout=25000)
+                page.wait_for_timeout(3000) # Sayfanın render olması için kısa bekleme
 
-                    time.sleep(random.uniform(1.0, 2.0))
-                    
-                    html_content = page.content()
-                    soup = BeautifulSoup(html_content, "html.parser")
-                    
-                    urun_kartlari = soup.find_all("div", {"data-component-type": "s-search-result"})
-                    
-                    if not urun_kartlari:
-                        print(f"Sayfa {page_number} üzerinde ürün bulunamadı veya son sayfaya ulaşıldı.")
-                        break
+                # Fırsat Kartlarını Yakala
+                soup = BeautifulSoup(page.content(), "html.parser")
+                
+                # Hem standart arama sonuçlarını hem de Deals bileşenlerini tara
+                kartlar = soup.select("div[data-component-type='s-search-result'], div[data-testid='grid-deals-container'] div[data-deal-id]")
+                
+                if not kartlar:
+                    # Alternatif genel kart yakalayıcı
+                    kartlar = soup.find_all("div", {"class": re.compile(r'DealCard|GridItem')})
 
-                    for kart in urun_kartlari:
-                        urun_linki, asin = asin_ile_temiz_link_ve_id_al(kart)
+                print(f"Tespit Edilen Potansiyel Fırsat Kartı Sayısı: {len(kartlar)}")
+
+                for kart in kartlar:
+                    # ASIN Tespiti
+                    asin = kart.get("data-asin")
+                    if not asin:
+                        link_elem = kart.find("a", href=True)
+                        if link_elem:
+                            match = re.search(r'/(?:dp|gp/product)/([A-Z0-9]{10})', link_elem['href'])
+                            if match:
+                                asin = match.group(1)
+
+                    if not asin or daha_once_bildirildi_mi(asin):
+                        continue
+
+                    # Ürün Adı
+                    baslik_elem = kart.find("h2") or kart.select_one("span.a-truncate-full, .a-size-base-plus")
+                    urun_adi = baslik_elem.get_text().strip() if baslik_elem else "Amazon Fırsat Ürünü"
+
+                    # Fiyat Bilgileri
+                    guncel_fiyat = None
+                    eski_fiyat = None
+
+                    # Güncel Fiyat
+                    guncel_elem = kart.select_one("span.a-price:not([data-a-strike='true']) span.a-offscreen, .a-price-whole")
+                    if guncel_elem:
+                        guncel_fiyat = metinden_fiyat_cikar(guncel_elem.get_text())
+
+                    # Üstü Çizili Eski Fiyat
+                    eski_elem = kart.select_one("span.a-price[data-a-strike='true'] span.a-offscreen, span.a-text-price span.a-offscreen")
+                    if eski_elem:
+                        eski_fiyat = metinden_fiyat_cikar(eski_elem.get_text())
+
+                    # İndirim Rozeti / Oranı (%XX İndirim yazısı varsa doğrudan al)
+                    rozet_elem = kart.select_one("span.a-badge-text, div[class*='badge']")
+                    rozet_orani = None
+                    if rozet_elem:
+                        rozet_match = re.search(r'%(\d+)', rozet_elem.get_text())
+                        if rozet_match:
+                            rozet_orani = float(rozet_match.group(1))
+
+                    # İndirim Hesaplama Mantığı
+                    indirim_orani = 0.0
+                    if eski_fiyat and guncel_fiyat and eski_fiyat > guncel_fiyat:
+                        indirim_orani = ((eski_fiyat - guncel_fiyat) / eski_fiyat) * 100
+                    elif rozet_orani:
+                        indirim_orani = rozet_orani
+
+                    # Eşik Kontrolü ve Bildirim
+                    if indirim_orani >= MIN_DISCOUNT_PERCENT and guncel_fiyat:
+                        urun_linki = f"https://www.amazon.com.tr/dp/{asin}"
                         
-                        if not urun_linki or not asin:
-                            continue
-
-                        if daha_once_bildirildi_mi(asin):
-                            continue
-
-                        baslik_elem = kart.find("h2")
-                        urun_adi = baslik_elem.get_text().strip() if baslik_elem else "Amazon Ürünü"
-
-                        # 1. Güncel Fiyat Tespiti (Önce a-price içindeki tam offscreen metni dene)
-                        guncel_fiyat = None
-                        fiyat_container = kart.select_one("span.a-price:not([data-a-strike='true'])")
-                        if fiyat_container:
-                            offscreen = fiyat_container.select_one("span.a-offscreen")
-                            if offscreen:
-                                guncel_fiyat = metinden_fiyat_ cikar(offscreen.get_text())
-
-                        if not guncel_fiyat:
-                            whole_elem = kart.find("span", {"class": "a-price-whole"})
-                            fraction_elem = kart.find("span", {"class": "a-price-fraction"})
-                            if whole_elem:
-                                w_text = whole_elem.get_text()
-                                f_text = fraction_elem.get_text() if fraction_elem else "00"
-                                guncel_fiyat = metinden_fiyat_ cikar(f"{w_text},{f_text}")
-
-                        if not guncel_fiyat:
-                            continue
-
-                        # 2. Eski Fiyat (Üstü Çizili Fiyat) Tespiti - Farklı CSS Alternatifleri
-                        eski_fiyat = None
+                        eski_fiyat_str = f"{eski_fiyat:.2f} TL" if eski_fiyat else "Belirtilmemiş"
                         
-                        # Alternatif 1: span.a-text-price span.a-offscreen
-                        eski_elem = kart.select_one("span.a-text-price span.a-offscreen")
-                        if eski_elem:
-                            eski_fiyat = metinden_fiyat_ cikar(eski_elem.get_text())
-
-                        # Alternatif 2: data-a-strike='true' olan fiyatlar
-                        if not eski_fiyat:
-                            eski_strike = kart.select_one("span.a-price[data-a-strike='true'] span.a-offscreen")
-                            if eski_strike:
-                                eski_fiyat = metinden_fiyat_ cikar(eski_strike.get_text())
-
-                        # Alternatif 3: a-basis-price / üstü çizili ikincil metinler
-                        if not eski_fiyat:
-                            eski_basis = kart.select_one("span.a-price.a-text-price")
-                            if eski_basis:
-                                eski_fiyat = metinden_fiyat_ cikar(eski_basis.get_text())
-
-                        # 3. İndirim Hesaplama
-                        if eski_fiyat and eski_fiyat > guncel_fiyat:
-                            indirim_orani = ((eski_fiyat - guncel_fiyat) / eski_fiyat) * 100
-                            
-                            if indirim_orani >= MIN_DISCOUNT_PERCENT:
-                                toplam_yeni_bildirim += 1
-                                mesaj = (
-                                    f"🔥 <b>%{int(indirim_orani)} AMAZON İNDİRİMİ!</b> 🔥\n\n"
-                                    f"📦 <b>Ürün:</b> {urun_adi[:100]}...\n"
-                                    f"📉 <b>İndirim Oranı:</b> %{indirim_orani:.1f}\n"
-                                    f"💰 <b>Fiyat:</b> {eski_fiyat:.2f} TL ➔ {guncel_fiyat:.2f} TL\n\n"
-                                    f"🔗 <a href='{urun_linki}'>Ürüne Git</a>"
-                                )
-                                telegram_mesaj_gonder(mesaj)
-                                hafizaya_ekle(asin)
-                                print(f"[BİLDİRİLDİ] %{indirim_orani:.1f} İndirim: {urun_adi[:30]}")
-
-                    next_button = soup.find("a", {"class": "s-pagination-next"})
-                    if next_button and "href" in next_button.attrs:
-                        current_url = "https://www.amazon.com.tr" + next_button["href"]
-                        page_number += 1
-                    else:
-                        print("Bu kategorideki tüm sayfalar tamamlandı.")
-                        break
+                        mesaj = (
+                            f"⚡ <b>ANLIK AMAZON FIRSATI!</b> ⚡\n\n"
+                            f"📦 <b>Ürün:</b> {urun_adi[:90]}...\n"
+                            f"📉 <b>İndirim:</b> %{int(indirim_orani)}\n"
+                            f"💰 <b>Fiyat:</b> {eski_fiyat_str} ➔ <b>{guncel_fiyat:.2f} TL</b>\n\n"
+                            f"🔗 <a href='{urun_linki}'>Ürünü İncele / Satın Al</a>"
+                        )
+                        
+                        telegram_mesaj_gonder(mesaj)
+                        db_ekle(asin, guncel_fiyat)
+                        print(f"🔥 [FIRSAT BİLDİRİLDİ] %{int(indirim_orani)} - {urun_adi[:30]}")
 
             except Exception as e:
-                print(f"Kategori {kat_idx} taranırken hata:", e)
+                print(f"Hata oluştu ({target_url}): {e}")
 
-        print(f"\nBütün Kategorilerin Taraması Bitti! Toplam {toplam_yeni_bildirim} yeni indirim bildirildi.")
         browser.close()
 
 if __name__ == "__main__":
-    tum_sayfalari_tara()
+    anlik_firsat_taramasi()
