@@ -18,18 +18,13 @@ PROXY_USER = "LJdsximctNx3"
 PROXY_PASS = "3Eyb9BqYR4Kc"
 
 DEALS_URLS = [
-    # Genel Fırsatlar ve Günün Fırsatları
     "https://www.amazon.com.tr/deals",
     "https://www.amazon.com.tr/gp/goldbox",
-    # Elektronik Kategorisindeki Tüm İndirimli Ürünler
     "https://www.amazon.com.tr/s?i=electronics&rh=p_n_deal_type%3A26901101031",
-    # Bilgisayar Kategorisindeki İndirimli Ürünler
-    "https://www.amazon.com.tr/s?i=computers&rh=p_n_deal_type%3A26901101031",
-    # Ev & Mutfak İndirimleri
-    "https://www.amazon.com.tr/s?i=kitchen&rh=p_n_deal_type%3A26901101031"
+    "https://www.amazon.com.tr/s?i=computers&rh=p_n_deal_type%3A26901101031"
 ]
 
-MIN_DISCOUNT_PERCENT = 30.0  # Test için %30
+MIN_DISCOUNT_PERCENT = 30.0  # %30 ve üzeri indirimler
 DB_FILE = "firsat_hafizasi.db"
 
 def db_kur():
@@ -87,6 +82,21 @@ def metinden_fiyat_cikar(fiyat_str):
     except ValueError:
         return None
 
+def sayfayi_asagi_kaydir_ve_yukle(page, scroll_sayisi=5):
+    """Sayfayı kademeli aşağı kaydırır ve varsa 'Daha Fazla Göster' butonlarına tıklar."""
+    for i in range(scroll_sayisi):
+        page.evaluate("window.scrollBy(0, 1000);")
+        page.wait_for_timeout(1000)
+        
+        # 'Daha fazla fırsat' veya 'Load More' butonu var mı kontrol et ve tıkla
+        try:
+            daha_fazla_btn = page.query_selector("button:has-text('Daha fazla'), button:has-text('Görüntüle'), a:has-text('Daha fazla')")
+            if daha_fazla_btn and daha_fazla_btn.is_visible():
+                daha_fazla_btn.click()
+                page.wait_for_timeout(2000)
+        except Exception:
+            pass
+
 def anlik_firsat_taramasi():
     db_kur()
     
@@ -106,28 +116,32 @@ def anlik_firsat_taramasi():
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             locale="tr-TR",
             viewport={"width": 1440, "height": 900},
-            accept_downloads=True  # Download hatasını önler
+            accept_downloads=True
         )
 
-        print("🚀 Anlık Fırsat Tarayıcısı Başlatıldı...")
+        print("🚀 Gelişmiş Derin Fırsat Tarayıcısı Başlatıldı...")
 
         for target_url in DEALS_URLS:
             print(f"\n[SAYFA TARANIYOR] -> {target_url}")
             page = context.new_page()
+            # Arka plan görsellerini engelle (hız için)
             page.route("**/*.{png,jpg,jpeg,svg,webp,gif,woff,woff2,ttf}", lambda route: route.abort())
 
             try:
-                # domcontentloaded kullanarak yönlendirmelerin tamamlanmasına izin veriyoruz
-                page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
-                page.wait_for_timeout(4000)
+                page.goto(target_url, wait_until="domcontentloaded", timeout=35000)
+                page.wait_for_timeout(2000)
+
+                # 📜 SAYFAYI AŞAĞI KAYDIR VE GİZLİ ÜRÜNLERİ YÜKLE
+                print("📜 Sayfa aşağı kaydırılıyor ve yeni ürünler yükleniyor...")
+                sayfayi_asagi_kaydir_ve_yukle(page, scroll_sayisi=6)
 
                 soup = BeautifulSoup(page.content(), "html.parser")
                 kartlar = soup.select("div[data-component-type='s-search-result'], div[data-testid='grid-deals-container'] div[data-deal-id]")
                 
                 if not kartlar:
-                    kartlar = soup.find_all("div", {"class": re.compile(r'DealCard|GridItem|DealTile')})
+                    kartlar = soup.find_all("div", {"class": re.compile(r'DealCard|GridItem|DealTile|a-cardui')})
 
-                print(f"Tespit Edilen Potansiyel Fırsat Kartı Sayısı: {len(kartlar)}")
+                print(f"✅ Toplam Yüklenen ve Bulunan Fırsat Kartı Sayısı: {len(kartlar)}")
 
                 for kart in kartlar:
                     asin = kart.get("data-asin")
@@ -167,8 +181,6 @@ def anlik_firsat_taramasi():
                         indirim_orani = ((eski_fiyat - guncel_fiyat) / eski_fiyat) * 100
                     elif rozet_orani:
                         indirim_orani = rozet_orani
-
-                    print(f"-> ASIN: {asin} | Güncel: {guncel_fiyat} TL | Eski: {eski_fiyat} TL | İndirim: %{indirim_orani:.1f}")
 
                     if indirim_orani >= MIN_DISCOUNT_PERCENT and guncel_fiyat:
                         urun_linki = f"https://www.amazon.com.tr/dp/{asin}"
